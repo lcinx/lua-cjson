@@ -54,21 +54,13 @@
 #define CJSON_VERSION   "2.1.0"
 #endif
 
-#define _ENABLE_JSON_NUMBER_KEY_
-
 /* Workaround for Solaris platforms missing isinf() */
 #if !defined(isinf) && (defined(USE_INTERNAL_ISINF) || defined(MISSING_ISINF))
 #define isinf(x) (!isnan(x) && isnan((x) - (x)))
 #endif
 
 #define DEFAULT_SPARSE_CONVERT 0
-
-#ifdef _ENABLE_JSON_NUMBER_KEY_
-#define DEFAULT_SPARSE_RATIO 1
-#else
 #define DEFAULT_SPARSE_RATIO 2
-#endif
-
 #define DEFAULT_SPARSE_SAFE 10
 #define DEFAULT_ENCODE_MAX_DEPTH 1000
 #define DEFAULT_DECODE_MAX_DEPTH 1000
@@ -135,6 +127,8 @@ typedef struct {
 
     int decode_invalid_numbers;
     int decode_max_depth;
+
+    int enable_object_number_key;   /* support integer key for object, this is a non-standard json */
 } json_config_t;
 
 typedef struct {
@@ -394,6 +388,7 @@ static void json_create_config(lua_State *l)
     cfg->encode_sparse_safe = DEFAULT_SPARSE_SAFE;
     cfg->encode_max_depth = DEFAULT_ENCODE_MAX_DEPTH;
     cfg->decode_max_depth = DEFAULT_DECODE_MAX_DEPTH;
+    cfg->enable_object_number_key = 1;
     cfg->encode_invalid_numbers = DEFAULT_ENCODE_INVALID_NUMBERS;
     cfg->decode_invalid_numbers = DEFAULT_DECODE_INVALID_NUMBERS;
     cfg->encode_keep_buffer = DEFAULT_ENCODE_KEEP_BUFFER;
@@ -526,22 +521,22 @@ static int lua_array_length(lua_State *l, json_config_t *cfg, strbuf_t *json)
         return -1;
     }
 
-#ifdef _ENABLE_JSON_NUMBER_KEY_
-    if (cfg->encode_sparse_ratio > 0 &&
-        max > items * cfg->encode_sparse_ratio) {
-        return -1;
-    }
-#else
-    /* Encode excessively sparse arrays as objects (if enabled) */
-    if (cfg->encode_sparse_ratio > 0 &&
-        max > items * cfg->encode_sparse_ratio &&
-        max > cfg->encode_sparse_safe) {
-        if (!cfg->encode_sparse_convert)
-            json_encode_exception(l, cfg, json, -1, "excessively sparse array");
+    if (cfg->enable_object_number_key) {
+        if (cfg->encode_sparse_ratio > 0 &&
+            max > items * cfg->encode_sparse_ratio) {
+            return -1;
+        }
+    } else {
+        /* Encode excessively sparse arrays as objects (if enabled) */
+        if (cfg->encode_sparse_ratio > 0 &&
+            max > items * cfg->encode_sparse_ratio &&
+            max > cfg->encode_sparse_safe) {
+            if (!cfg->encode_sparse_convert)
+                json_encode_exception(l, cfg, json, -1, "excessively sparse array");
 
-        return -1;
+            return -1;
+        }
     }
-#endif
 
     return max;
 }
@@ -657,14 +652,14 @@ static void json_append_object(lua_State *l, json_config_t *cfg,
         keytype = lua_type(l, -2);
         if (keytype == LUA_TNUMBER) {
 
-#ifdef _ENABLE_JSON_NUMBER_KEY_
-            json_append_number(l, cfg, json, -2);
-            strbuf_append_char(json, ':');
-#else
-            strbuf_append_char(json, '"');
-            json_append_number(l, cfg, json, -2);
-            strbuf_append_mem(json, "\":", 2);
-#endif
+            if (cfg->enable_object_number_key) {
+                json_append_number(l, cfg, json, -2);
+                strbuf_append_char(json, ':');
+            } else {
+                strbuf_append_char(json, '"');
+                json_append_number(l, cfg, json, -2);
+                strbuf_append_mem(json, "\":", 2);
+            }
 
         } else if (keytype == LUA_TSTRING) {
             json_append_string(l, json, -2);
@@ -735,6 +730,19 @@ static int json_encode(lua_State *l)
     strbuf_t *encode_buf;
     char *json;
     int len;
+    int old_enable, new_enable;
+
+    old_enable = cfg->enable_object_number_key;
+    new_enable = old_enable;
+    if (lua_gettop(l) == 2) {
+        new_enable = lua_toboolean(l, -1);
+        lua_pop(l, 1);
+    }
+    cfg->enable_object_number_key = new_enable;
+    if (cfg->enable_object_number_key)
+        cfg->encode_sparse_ratio = 1;
+    else
+        cfg->encode_sparse_ratio = DEFAULT_SPARSE_RATIO;
 
     luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
 
@@ -756,6 +764,11 @@ static int json_encode(lua_State *l)
     if (!cfg->encode_keep_buffer)
         strbuf_free(encode_buf);
 
+    cfg->enable_object_number_key = old_enable;
+    if (cfg->enable_object_number_key)
+        cfg->encode_sparse_ratio = 1;
+    else
+        cfg->encode_sparse_ratio = DEFAULT_SPARSE_RATIO;
     return 1;
 }
 
@@ -1180,23 +1193,23 @@ static void json_parse_object_context(lua_State *l, json_parse_t *json)
 
     while (1) {
 
-#ifdef _ENABLE_JSON_NUMBER_KEY_
-        if (token.type == T_STRING) {
+        if (json->cfg->enable_object_number_key) {
+            if (token.type == T_STRING) {
+                /* Push key */
+                lua_pushlstring(l, token.value.string, token.string_len);
+            } else if (token.type == T_NUMBER) {
+                /* Push key */
+                lua_pushnumber(l, token.value.number);
+            } else {
+                json_throw_parse_error(l, json, "object key string or key number", &token);
+            }
+        } else {
+            if (token.type != T_STRING)
+                json_throw_parse_error(l, json, "object key string", &token);
+
             /* Push key */
             lua_pushlstring(l, token.value.string, token.string_len);
-        } else if (token.type == T_NUMBER) {
-            /* Push key */
-            lua_pushnumber(l, token.value.number);
-        } else {
-            json_throw_parse_error(l, json, "object key string or key number", &token);
         }
-#else
-        if (token.type != T_STRING)
-            json_throw_parse_error(l, json, "object key string", &token);
-
-        /* Push key */
-       lua_pushlstring(l, token.value.string, token.string_len);
-#endif
 
         json_next_token(json, &token);
         if (token.type != T_COLON)
@@ -1296,10 +1309,23 @@ static int json_decode(lua_State *l)
     json_parse_t json;
     json_token_t token;
     size_t json_len;
+    int old_enable, new_enable;
+
+    json.cfg = json_fetch_config(l);
+    old_enable = json.cfg->enable_object_number_key;
+    new_enable = old_enable;
+    if (lua_gettop(l) == 2) {
+        new_enable = lua_toboolean(l, -1);
+        lua_pop(l, 1);
+    }
+    json.cfg->enable_object_number_key = new_enable;
+    if (json.cfg->enable_object_number_key)
+        json.cfg->encode_sparse_ratio = 1;
+    else
+        json.cfg->encode_sparse_ratio = DEFAULT_SPARSE_RATIO;
 
     luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
 
-    json.cfg = json_fetch_config(l);
     json.data = luaL_checklstring(l, 1, &json_len);
     json.current_depth = 0;
     json.ptr = json.data;
@@ -1328,6 +1354,11 @@ static int json_decode(lua_State *l)
 
     strbuf_free(json.tmp);
 
+    json.cfg->enable_object_number_key = old_enable;
+    if (json.cfg->enable_object_number_key)
+        json.cfg->encode_sparse_ratio = 1;
+    else
+        json.cfg->encode_sparse_ratio = DEFAULT_SPARSE_RATIO;
     return 1;
 }
 
