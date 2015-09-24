@@ -10,7 +10,7 @@ LOCAL_SRC_FILES := ./lua_cjson.c \
 				   ./fpconv.c
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH) \
-					$(LOCAL_PATH)/../../../mobile/external/lua/lua
+					$(LOCAL_PATH)/../lua/src \
 
 LOCAL_CFLAGS := -DNDEBUG -O2
 LOCAL_EXPORT_CFLAGS := -DNDEBUG -O2
