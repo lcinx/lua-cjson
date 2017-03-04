@@ -44,10 +44,10 @@ none:
 
 
 win-debug:
-	$(MAKE) all EXTRA_INCS="-I"./../lua/src"" EXTRA_CFLAGS="-Wall -DWIN32 -DDEBUG -g" EXTRA_CXXFLAGS="-Wall -DWIN32 -DDEBUG -g"
+	$(MAKE) all EXTRA_INCS="-I"./../lua/src"" EXTRA_CFLAGS="-Wall -D_WIN32 -DDEBUG -g" EXTRA_CXXFLAGS="-Wall -D_WIN32 -DDEBUG -g"
 
 win-release:
-	$(MAKE) all EXTRA_INCS="-I"./../lua/src"" EXTRA_CFLAGS="-Wall -DWIN32 -DNDEBUG -O2" EXTRA_CXXFLAGS="-Wall -DWIN32 -DNDEBUG -O2"
+	$(MAKE) all EXTRA_INCS="-I"./../lua/src"" EXTRA_CFLAGS="-Wall -D_WIN32 -DNDEBUG -O2" EXTRA_CXXFLAGS="-Wall -D_WIN32 -DNDEBUG -O2"
 
 
 linux-debug:
