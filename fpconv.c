@@ -35,6 +35,20 @@
 
 #include "fpconv.h"
 
+typedef int (*cjson_func_string_to_number)(const char *nptr, char **endptr, double *value);
+typedef int (*cjson_func_number_to_string)(double value, char *buf, size_t buflen);
+
+static cjson_func_string_to_number func_string_to_number = 0;
+static cjson_func_number_to_string func_number_to_string = 0;
+
+
+void cjson_set_number_custom_func(void *tonumber_func, void *tostring_func) {
+    func_string_to_number = (cjson_func_string_to_number)tonumber_func;
+    func_number_to_string = (cjson_func_number_to_string)tostring_func;
+}
+
+
+
 /* Lua CJSON assumes the locale is the same for all threads within a
  * process and doesn't change after initialisation.
  *
@@ -110,6 +124,13 @@ double fpconv_strtod(const char *nptr, char **endptr)
     int buflen;
     double value;
 
+    if (func_string_to_number) {
+        double result;
+        int res = func_string_to_number(nptr, endptr, &result);
+        if (res >= 0)
+            return result;
+    }
+
     /* System strtod() is fine when decimal point is '.' */
     if (locale_decimal_point == '.')
         return strtod(nptr, endptr);
@@ -177,6 +198,12 @@ int fpconv_g_fmt(char *str, double num, int precision)
     char fmt[6];
     int len;
     char *b;
+
+    if (func_number_to_string) {
+        int res = func_number_to_string(num, str, FPCONV_G_FMT_BUFSIZE);
+        if (res >= 0)
+            return res;
+    }
 
     set_number_format(fmt, precision);
 
