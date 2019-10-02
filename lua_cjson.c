@@ -129,6 +129,7 @@ typedef struct {
     int decode_max_depth;
 
     int enable_object_number_key;   /* support integer key for object, this is a non-standard json */
+    int enable_compact_format;      /* enable compact format */
 } json_config_t;
 
 typedef struct {
@@ -389,6 +390,7 @@ static void json_create_config(lua_State *l)
     cfg->encode_max_depth = DEFAULT_ENCODE_MAX_DEPTH;
     cfg->decode_max_depth = DEFAULT_DECODE_MAX_DEPTH;
     cfg->enable_object_number_key = 1;
+    cfg->enable_compact_format = 1;
     cfg->encode_invalid_numbers = DEFAULT_ENCODE_INVALID_NUMBERS;
     cfg->decode_invalid_numbers = DEFAULT_DECODE_INVALID_NUMBERS;
     cfg->encode_keep_buffer = DEFAULT_ENCODE_KEEP_BUFFER;
@@ -567,6 +569,18 @@ static void json_check_encode_depth(lua_State *l, json_config_t *cfg,
 static void json_append_data(lua_State *l, json_config_t *cfg,
                              int current_depth, strbuf_t *json);
 
+static inline void json_append_for_readability(json_config_t *cfg, 
+                                int current_depth, strbuf_t *json) {
+    int i;
+    if (cfg->enable_compact_format)
+        return;
+
+    strbuf_append_char(json, '\n');
+    for (i = current_depth; i > 0; --i) {
+        strbuf_append_char(json, '\t');
+    }
+}
+
 /* json_append_array args:
  * - lua_State
  * - JSON strbuf
@@ -585,11 +599,14 @@ static void json_append_array(lua_State *l, json_config_t *cfg, int current_dept
         else
             comma = 1;
 
+        json_append_for_readability(cfg, current_depth, json);
+
         lua_rawgeti(l, -1, i);
         json_append_data(l, cfg, current_depth, json);
         lua_pop(l, 1);
     }
 
+    json_append_for_readability(cfg, current_depth - 1, json);
     strbuf_append_char(json, ']');
 }
 
@@ -652,6 +669,8 @@ static void json_append_object(lua_State *l, json_config_t *cfg,
         keytype = lua_type(l, -2);
         if (keytype == LUA_TNUMBER) {
 
+            json_append_for_readability(cfg, current_depth, json);
+
             if (cfg->enable_object_number_key) {
                 json_append_number(l, cfg, json, -2);
                 strbuf_append_char(json, ':');
@@ -662,6 +681,7 @@ static void json_append_object(lua_State *l, json_config_t *cfg,
             }
 
         } else if (keytype == LUA_TSTRING) {
+            json_append_for_readability(cfg, current_depth, json);
             json_append_string(l, json, -2);
             strbuf_append_char(json, ':');
         } else {
@@ -676,6 +696,7 @@ static void json_append_object(lua_State *l, json_config_t *cfg,
         /* table, key */
     }
 
+    json_append_for_readability(cfg, current_depth - 1, json);
     strbuf_append_char(json, '}');
 }
 
@@ -731,18 +752,22 @@ static int json_encode(lua_State *l)
     char *json;
     int len;
     int old_enable, new_enable;
+    int old_compact_format, new_compact_format;
 
     old_enable = cfg->enable_object_number_key;
-    new_enable = old_enable;
-    if (lua_gettop(l) == 2) {
-        new_enable = lua_toboolean(l, -1);
-        lua_pop(l, 1);
-    }
+    new_enable = luaL_opt(l, lua_toboolean, 2, cfg->enable_object_number_key);
     cfg->enable_object_number_key = new_enable;
     if (cfg->enable_object_number_key)
         cfg->encode_sparse_ratio = 1;
     else
         cfg->encode_sparse_ratio = DEFAULT_SPARSE_RATIO;
+
+    old_compact_format = cfg->enable_compact_format;
+    new_compact_format = luaL_opt(l, lua_toboolean, 3, cfg->enable_compact_format);
+    cfg->enable_compact_format = new_compact_format;
+
+    lua_settop(l, 1);
+
 
     luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
 
@@ -764,11 +789,14 @@ static int json_encode(lua_State *l)
     if (!cfg->encode_keep_buffer)
         strbuf_free(encode_buf);
 
+
     cfg->enable_object_number_key = old_enable;
     if (cfg->enable_object_number_key)
         cfg->encode_sparse_ratio = 1;
     else
         cfg->encode_sparse_ratio = DEFAULT_SPARSE_RATIO;
+
+    cfg->enable_compact_format = old_compact_format;
     return 1;
 }
 
