@@ -728,6 +728,7 @@ static void json_append_data(lua_State *l, json_config_t *cfg,
         else
             json_append_object(l, cfg, current_depth, json);
         break;
+/*
     case LUA_TNIL:
         strbuf_append_mem(json, "null", 4);
         break;
@@ -736,10 +737,13 @@ static void json_append_data(lua_State *l, json_config_t *cfg,
             strbuf_append_mem(json, "null", 4);
             break;
         }
-    default:
+*/
+    default: {}
         /* Remaining types (LUA_TFUNCTION, LUA_TUSERDATA, LUA_TTHREAD,
          * and LUA_TLIGHTUSERDATA) cannot be serialised */
+        /*
         json_encode_exception(l, cfg, json, -1, "type not supported");
+        */
         /* never returns */
     }
 }
