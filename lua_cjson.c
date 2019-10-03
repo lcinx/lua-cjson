@@ -130,6 +130,7 @@ typedef struct {
 
     int enable_object_number_key;   /* support integer key for object, this is a non-standard json */
     int enable_compact_format;      /* enable compact format */
+    int enable_skip_unknow_type;    /* enable skip unknow type */
 } json_config_t;
 
 typedef struct {
@@ -391,6 +392,7 @@ static void json_create_config(lua_State *l)
     cfg->decode_max_depth = DEFAULT_DECODE_MAX_DEPTH;
     cfg->enable_object_number_key = 1;
     cfg->enable_compact_format = 1;
+    cfg->enable_skip_unknow_type = 0;
     cfg->encode_invalid_numbers = DEFAULT_ENCODE_INVALID_NUMBERS;
     cfg->decode_invalid_numbers = DEFAULT_DECODE_INVALID_NUMBERS;
     cfg->encode_keep_buffer = DEFAULT_ENCODE_KEEP_BUFFER;
@@ -738,7 +740,13 @@ static void json_append_data(lua_State *l, json_config_t *cfg,
             break;
         }
 */
-    default: {}
+    default: {
+            if (cfg->enable_skip_unknow_type) {
+                strbuf_append_mem(json, "\"\"", 2);
+            } else {
+                json_encode_exception(l, cfg, json, -1, "type not supported");
+            }
+        }
         /* Remaining types (LUA_TFUNCTION, LUA_TUSERDATA, LUA_TTHREAD,
          * and LUA_TLIGHTUSERDATA) cannot be serialised */
         /*
@@ -757,6 +765,7 @@ static int json_encode(lua_State *l)
     int len;
     int old_enable, new_enable;
     int old_compact_format, new_compact_format;
+    int old_enable_skip_unknow_type, new_enable_skip_unknow_type;
 
     old_enable = cfg->enable_object_number_key;
     new_enable = luaL_opt(l, lua_toboolean, 2, cfg->enable_object_number_key);
@@ -769,6 +778,10 @@ static int json_encode(lua_State *l)
     old_compact_format = cfg->enable_compact_format;
     new_compact_format = luaL_opt(l, lua_toboolean, 3, cfg->enable_compact_format);
     cfg->enable_compact_format = new_compact_format;
+
+    old_enable_skip_unknow_type = cfg->enable_skip_unknow_type;
+    new_enable_skip_unknow_type = luaL_opt(l, lua_toboolean, 4, cfg->enable_skip_unknow_type);
+    cfg->enable_skip_unknow_type = new_enable_skip_unknow_type;
 
     lua_settop(l, 1);
 
@@ -801,6 +814,7 @@ static int json_encode(lua_State *l)
         cfg->encode_sparse_ratio = DEFAULT_SPARSE_RATIO;
 
     cfg->enable_compact_format = old_compact_format;
+    cfg->enable_skip_unknow_type = old_enable_skip_unknow_type;
     return 1;
 }
 
